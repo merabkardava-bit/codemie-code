@@ -15,6 +15,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'fs';
+import fsPromises from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -471,7 +472,7 @@ describe('cli-updater', () => {
       process.env.CODEMIE_UPDATE_CHECK_INTERVAL = String(24 * 60 * 60 * 1000);
       writeFileSync(lastCheckFile(), String(Date.now()), 'utf-8');
       const { checkAndPromptForUpdate } = await loadUpdater();
-      await checkAndPromptForUpdate();
+      await expect(checkAndPromptForUpdate()).resolves.toBe(false);
       expect(getLatestVersionMock).not.toHaveBeenCalled();
     });
 
@@ -480,7 +481,7 @@ describe('cli-updater', () => {
       writeFileSync(lastCheckFile(), '0', 'utf-8'); // epoch => far in the past
       getLatestVersionMock.mockResolvedValue('0.0.1'); // older => no update
       const { checkAndPromptForUpdate } = await loadUpdater();
-      await checkAndPromptForUpdate();
+      await expect(checkAndPromptForUpdate()).resolves.toBe(false);
       expect(getLatestVersionMock).toHaveBeenCalledTimes(1);
       expect(installGlobalMock).not.toHaveBeenCalled();
     });
@@ -490,7 +491,7 @@ describe('cli-updater', () => {
       getLatestVersionMock.mockResolvedValue('999.0.0');
       installGlobalMock.mockResolvedValue(undefined);
       const { checkAndPromptForUpdate } = await loadUpdater();
-      await checkAndPromptForUpdate();
+      await expect(checkAndPromptForUpdate()).resolves.toBe(true); // installed => caller relaunches
       expect(installGlobalMock).toHaveBeenCalledTimes(1);
       const [pkg, opts] = installGlobalMock.mock.calls[0];
       expect(pkg).toBe(CLI_PACKAGE_NAME);
@@ -502,8 +503,55 @@ describe('cli-updater', () => {
     it('does not update when no newer version is available', async () => {
       getLatestVersionMock.mockResolvedValue('0.0.1');
       const { checkAndPromptForUpdate } = await loadUpdater();
-      await checkAndPromptForUpdate();
+      await expect(checkAndPromptForUpdate()).resolves.toBe(false);
       expect(installGlobalMock).not.toHaveBeenCalled();
+    });
+
+    it('returns false when the npm check fails', async () => {
+      getLatestVersionMock.mockResolvedValue(null);
+      const { checkAndPromptForUpdate } = await loadUpdater();
+      await expect(checkAndPromptForUpdate()).resolves.toBe(false);
+      expect(installGlobalMock).not.toHaveBeenCalled();
+    });
+
+    it('returns false when another process holds the update lock', async () => {
+      getLatestVersionMock.mockResolvedValue('999.0.0');
+      writeFileSync(join(tempHome, '.update-lock'), '', 'utf-8'); // fresh lock => not stale
+      const { checkAndPromptForUpdate } = await loadUpdater();
+      await expect(checkAndPromptForUpdate()).resolves.toBe(false);
+      expect(installGlobalMock).not.toHaveBeenCalled();
+    });
+
+    it('returns false when the silent install throws, and releases the lock', async () => {
+      getLatestVersionMock.mockResolvedValue('999.0.0');
+      installGlobalMock.mockRejectedValue(new Error('EACCES'));
+      const { checkAndPromptForUpdate } = await loadUpdater();
+      await expect(checkAndPromptForUpdate()).resolves.toBe(false);
+      expect(installGlobalMock).toHaveBeenCalledTimes(1);
+      expect(existsSync(join(tempHome, '.update-lock'))).toBe(false);
+    });
+
+    it('skips the install and returns false when another starter already installed the target version', async () => {
+      getLatestVersionMock.mockResolvedValue('999.0.0');
+      const realReadFile = fsPromises.readFile.bind(fsPromises);
+      let manifestReads = 0;
+      const readSpy = vi.spyOn(fsPromises, 'readFile').mockImplementation(((target: unknown, ...rest: unknown[]) => {
+        if (String(target).endsWith('package.json')) {
+          manifestReads += 1;
+          // 1st read (version check) sees the old install; 2nd (after the lock) sees the new one
+          return Promise.resolve(JSON.stringify({ version: manifestReads === 1 ? '0.0.1' : '999.0.0' }));
+        }
+        return (realReadFile as (...a: unknown[]) => Promise<unknown>)(target, ...rest);
+      }) as unknown as typeof fsPromises.readFile);
+      try {
+        const { checkAndPromptForUpdate } = await loadUpdater();
+        await expect(checkAndPromptForUpdate()).resolves.toBe(false);
+      } finally {
+        readSpy.mockRestore();
+      }
+      expect(manifestReads).toBe(2);
+      expect(installGlobalMock).not.toHaveBeenCalled();
+      expect(existsSync(join(tempHome, '.update-lock'))).toBe(false);
     });
 
     it('prompts and skips the install when the user declines (CODEMIE_AUTO_UPDATE=false)', async () => {
@@ -511,7 +559,7 @@ describe('cli-updater', () => {
       getLatestVersionMock.mockResolvedValue('999.0.0');
       inquirerPromptMock.mockResolvedValue({ shouldUpdate: false });
       const { checkAndPromptForUpdate } = await loadUpdater();
-      await checkAndPromptForUpdate();
+      await expect(checkAndPromptForUpdate()).resolves.toBe(false);
       expect(inquirerPromptMock).toHaveBeenCalledTimes(1);
       expect(installGlobalMock).not.toHaveBeenCalled();
     });
