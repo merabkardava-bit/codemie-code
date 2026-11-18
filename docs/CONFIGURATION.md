@@ -221,6 +221,8 @@ be used as the permanent corporate configuration.
 
 With either value, a hook process (`codemie hook`, `codemie sound`) performs no update check, runs pending migrations silently and shows no what's-new notice; the next interactive `codemie` run checks and updates.
 
+After a silent auto-update installs, the command you ran restarts once on the updated install and then runs as usual. The restart is automatic: stdin, stdout and exit codes pass through, and the update check is not repeated in the restarted process.
+
 - **Rate Limited**: Only checks once per interval (default: 24 hours)
   - First invocation: Checks npm registry (5s max timeout)
   - Subsequent invocations within interval: Instant (no network call)
