@@ -378,9 +378,10 @@ async function reportUpdateResult(latestVersion: string, silent: boolean): Promi
  *
  * Non-blocking: Failures are logged but don't block CLI startup
  *
- * @returns true only when the silent branch installed a new version; the caller
- *   (bin/codemie.js) must then relaunch, because the modules it already loaded may
- *   no longer match the files on disk. Every other outcome returns false.
+ * @returns true only when the silent branch installed a new version, or found a sibling
+ *   starter had already installed it; the caller (bin/codemie.js) must then relaunch,
+ *   because the modules it already loaded may no longer match the files on disk. Every
+ *   other outcome returns false.
  */
 export async function checkAndPromptForUpdate(): Promise<boolean> {
   // CodeMie Connect installs are updated by the Connect app, never by the CLI
@@ -421,7 +422,9 @@ export async function checkAndPromptForUpdate(): Promise<boolean> {
         const installedVersion = await getCurrentCliVersion();
         if (installedVersion && compareVersions(installedVersion, result.latestVersion) >= 0) {
           logger.debug(`CLI already at ${installedVersion}, skipping auto-update`);
-          return false;
+          // The files changed under this process, so it must relaunch on them; the child's
+          // marker skips the update gate, so this cannot loop
+          return true;
         }
 
         // Silent auto-update (default behavior)

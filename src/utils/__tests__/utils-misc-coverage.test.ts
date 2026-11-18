@@ -531,7 +531,7 @@ describe('cli-updater', () => {
       expect(existsSync(join(tempHome, '.update-lock'))).toBe(false);
     });
 
-    it('skips the install and returns false when another starter already installed the target version', async () => {
+    it('skips the install and returns true (relaunch) when another starter already installed the target version', async () => {
       getLatestVersionMock.mockResolvedValue('999.0.0');
       const realReadFile = fsPromises.readFile.bind(fsPromises);
       let manifestReads = 0;
@@ -545,7 +545,7 @@ describe('cli-updater', () => {
       }) as unknown as typeof fsPromises.readFile);
       try {
         const { checkAndPromptForUpdate } = await loadUpdater();
-        await expect(checkAndPromptForUpdate()).resolves.toBe(false);
+        await expect(checkAndPromptForUpdate()).resolves.toBe(true);
       } finally {
         readSpy.mockRestore();
       }
