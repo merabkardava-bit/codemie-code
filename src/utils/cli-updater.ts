@@ -377,17 +377,22 @@ async function reportUpdateResult(latestVersion: string, silent: boolean): Promi
  * - File-based locking: Prevents concurrent updates from multiple CLI processes
  *
  * Non-blocking: Failures are logged but don't block CLI startup
+ *
+ * @returns true only when the silent branch installed a new version, or found a sibling
+ *   starter had already installed it; the caller (bin/codemie.js) must then relaunch,
+ *   because the modules it already loaded may no longer match the files on disk. Every
+ *   other outcome returns false.
  */
-export async function checkAndPromptForUpdate(): Promise<void> {
+export async function checkAndPromptForUpdate(): Promise<boolean> {
   // CodeMie Connect installs are updated by the Connect app, never by the CLI
   if (await isCodemieConnectInstall()) {
-    return;
+    return false;
   }
 
   try {
     // PERFORMANCE FIX: Rate limiting - only check once per interval (default: 24h)
     if (!(await shouldCheckForUpdate())) {
-      return;
+      return false;
     }
 
     const result = await checkForCliUpdate();
@@ -397,7 +402,7 @@ export async function checkAndPromptForUpdate(): Promise<void> {
 
     // No update available or check failed
     if (!result || !result.hasUpdate) {
-      return;
+      return false;
     }
 
     const autoUpdate = isAutoUpdateEnabled();
@@ -407,18 +412,29 @@ export async function checkAndPromptForUpdate(): Promise<void> {
       const hasLock = await acquireUpdateLock();
       if (!hasLock) {
         logger.debug('Another process is updating CLI, skipping');
-        return;
+        return false;
       }
 
       try {
+        // Another starter may have installed this version between our version check and
+        // the lock: package.json is read fresh, so a reinstall now would replace files under
+        // a sibling process that has already relaunched on them.
+        const installedVersion = await getCurrentCliVersion();
+        if (installedVersion && compareVersions(installedVersion, result.latestVersion) >= 0) {
+          logger.debug(`CLI already at ${installedVersion}, skipping auto-update`);
+          // The files changed under this process, so it must relaunch on them; the child's
+          // marker skips the update gate, so this cannot loop
+          return true;
+        }
+
         // Silent auto-update (default behavior)
         logger.debug(`Auto-updating CLI: ${result.currentVersion} → ${result.latestVersion}`);
         await updateCli(result.latestVersion, true);
-        // Don't exit - let CLI continue with updated version on next run
+        // The caller relaunches the command so it runs entirely on the updated files
+        return true;
       } finally {
         await releaseUpdateLock();
       }
-      return;
     }
 
     // Prompt mode (CODEMIE_AUTO_UPDATE=false)
@@ -430,7 +446,7 @@ export async function checkAndPromptForUpdate(): Promise<void> {
       console.log();
       console.log(chalk.dim('  💡 To enable auto-update: export CODEMIE_AUTO_UPDATE=true'));
       console.log();
-      return;
+      return false;
     }
 
     // CONCURRENCY FIX: Try to acquire lock before updating
@@ -439,7 +455,7 @@ export async function checkAndPromptForUpdate(): Promise<void> {
       console.log();
       console.log(chalk.yellow('⚠ Another process is updating CLI. Please wait and try again.'));
       console.log();
-      return;
+      return false;
     }
 
     try {
@@ -464,5 +480,6 @@ export async function checkAndPromptForUpdate(): Promise<void> {
 
     // Don't block CLI startup if update check/install fails
     logger.debug('CLI update check failed (non-blocking):', error);
+    return false;
   }
 }

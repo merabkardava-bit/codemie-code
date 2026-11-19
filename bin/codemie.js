@@ -5,6 +5,8 @@
  * Entry point for the codemie executable
  */
 
+import { fileURLToPath } from 'node:url';
+import { relaunch, consumeRelaunchMarker } from './relaunch.js';
 import { logger } from '../dist/utils/logger.js';
 import { isScheduledSyncRun } from '../dist/utils/scheduled-run.js';
 import { isMachineOutputInvocation } from '../dist/utils/machine-output.js';
@@ -41,6 +43,11 @@ const isScheduledRun = isScheduledSyncRun(process.argv);
 // hook, the console stream is left alone: the command itself still prints to stdout.
 const isMachineOutput = isMachineOutputInvocation(process.argv.slice(2));
 
+// Set on the child this launcher starts after a startup auto-update: it must not check for
+// an update again (and so cannot relaunch in a loop). Read and cleared before any dynamic
+// import, so nothing loaded later sees it or passes it on to an agent it spawns.
+const isRelaunched = consumeRelaunchMarker();
+
 // Imported after the console switch: their module graph logs at import time.
 const { MigrationRunner } = await import('../dist/migrations/index.js');
 const { checkAndPromptForUpdate } = await import('../dist/utils/cli-updater.js');
@@ -73,13 +80,24 @@ try {
 // Skip in test environments to avoid timeouts and network calls during testing
 // Skip for the unattended scheduled analytics sync job (no user to notify)
 // Non-blocking: failures don't prevent CLI from running
+// Skip in the relaunched child: the update was just installed
 const isTestEnvironment = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
-if (!isTestEnvironment && !isHookProcess && !isScheduledRun && !isMachineOutput) {
+let updated = false;
+if (!isTestEnvironment && !isHookProcess && !isScheduledRun && !isMachineOutput && !isRelaunched) {
   try {
-    await checkAndPromptForUpdate();
+    updated = await checkAndPromptForUpdate();
   } catch (error) {
     // Silently fail - don't block CLI startup
   }
+}
+
+// An install just replaced the package files under this process. Modules it has already
+// loaded come from the old files and a later lazy import resolves against the new ones, so
+// run the same command again in a fresh process (migrations, what's-new and the command
+// itself all happen there). Never returns: it exits with the child's status. Nothing may
+// be imported between the install and this call.
+if (updated) {
+  await relaunch({ script: fileURLToPath(import.meta.url), args: process.argv.slice(2) });
 }
 
 // Once-per-upgrade "What's new" notice from CHANGELOG.md (shares the

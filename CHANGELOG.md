@@ -16,6 +16,10 @@ All notable changes to this project are documented in this file, following [Keep
 - The key to enter for VS Code BYOK is `codemie-proxy.vscode-byok`; `codemie proxy connect --omp` can be combined with `--vscode`
 - `codemie proxy status --json` no longer carries `clientType`; after a downgrade to an older CLI run `codemie proxy connect` again
 
+### Fixed
+
+- A startup auto-update now restarts the command once on the updated install, so `--version`, `--help`, `doctor`, `list` and `analytics` no longer crash with "does not provide an export named ...". This protects updates from this version on: if you are on an earlier 0.16.x and see that crash once, run `npm i -g @codemieai/code@latest` once
+
 ## [0.16.10] - 2026-11-17
 
 ### Added

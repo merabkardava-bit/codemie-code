@@ -99,7 +99,7 @@ describe('CodeMie Connect install detection', () => {
       const writeSpy = vi.spyOn(fs, 'writeFile').mockResolvedValue(undefined);
       const readSpy = vi.spyOn(fs, 'readFile');
 
-      await expect(checkAndPromptForUpdate()).resolves.toBeUndefined();
+      await expect(checkAndPromptForUpdate()).resolves.toBe(false);
 
       expect(getLatestVersion).not.toHaveBeenCalled();
       expect(installGlobal).not.toHaveBeenCalled();
