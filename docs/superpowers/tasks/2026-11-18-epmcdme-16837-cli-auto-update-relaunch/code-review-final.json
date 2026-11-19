@@ -1,0 +1,289 @@
+{
+  "schema": "sdlc-factory/code-review-final@1",
+  "passed": true,
+  "decision": "approve",
+  "gate_decision": {
+    "gate": "code-review.check",
+    "decision": "approve",
+    "source": "hitl",
+    "rationale": "User approved: CR-001 resolved per the check round; CR-002/003/005 fix-later, CR-004 accepted"
+  },
+  "gates": [
+    {
+      "gate": "code-review.final",
+      "decision": "request-changes",
+      "source": "hitl",
+      "rationale": "User accepted all recommended: CR-001 fix-now; CR-002/003/005 fix-later; CR-004 accept"
+    },
+    {
+      "gate": "code-review.check",
+      "decision": "approve",
+      "source": "hitl",
+      "rationale": "User approved: CR-001 resolved per the check round; CR-002/003/005 fix-later, CR-004 accepted"
+    }
+  ],
+  "reviewed_head": "fb028061c2750929456608ddc13d29187fa63025",
+  "rounds": [
+    "final",
+    "check"
+  ],
+  "rationale": "The one fix-set blocking finding (CR-001) is resolved: src/utils/cli-updater.ts:427 now returns true in the sibling-installed branch, the lock is still released in finally, bin/codemie.js relaunches on true, and the child's marker skips the update gate so there is no loop. Advisory and deferred findings were not re-checked, and the unrelated .codemie config edit was ignored.",
+  "confidence": "high",
+  "check_confidence": "high",
+  "risk_flags": [],
+  "open": 0,
+  "closed": {
+    "fixed": 1,
+    "moot": 0,
+    "decided": 0,
+    "wont_fix": 0
+  },
+  "findings": [
+    {
+      "id": "CR-001",
+      "kind": "code",
+      "severity": "major",
+      "triage": "patch",
+      "file": "src/utils/cli-updater.ts",
+      "line": 422,
+      "title": "Sibling-installed path skips relaunch",
+      "problem": "After taking the update lock, getCurrentCliVersion() is compared to the target. If a sibling starter already installed it, the function returns false, so bin/codemie.js does not relaunch. This process still holds modules loaded from the old files while the package files on disk are the new version, so its lazy import of dist/cli/index.js can hit the same 'does not provide an export named' crash this change fixes. The unit test in utils-misc-coverage.test.ts:309-330 pins false for this case and no integration test runs two launchers concurrently.",
+      "impact": "A concurrent starter that loses the install race still crashes on the first command after an update (acceptance criterion 1: no mixing of cached old modules with new files). Reachability confirmed: the check ran with hasUpdate true against the old installed version, so installed >= target at this point means the files changed under this process.",
+      "recommendation": "Return true here (the caller relaunches on the new files; the child's marker prevents a loop) and change the unit test to expect true with no install call. Optionally add a fake-npm integration case where the installed version is bumped before the lock.",
+      "status": "resolved",
+      "check_notes": "cli-updater.ts:427 returns true in the sibling-installed branch; lock released in finally; codemie.js:99 relaunches on true and the child marker skips the gate (no loop); unit test now expects true.",
+      "fix": {
+        "change": "Post-lock sibling-installed branch in checkAndPromptForUpdate now returns true so the caller relaunches on the new files",
+        "test": "src/utils/__tests__/utils-misc-coverage.test.ts: skips the install and returns true (relaunch) when another starter already installed the target version"
+      },
+      "disposition": {
+        "rationale": "recommended action accepted",
+        "source": "hitl",
+        "action": "fix-now"
+      }
+    },
+    {
+      "id": "CR-002",
+      "kind": "code",
+      "severity": "minor",
+      "triage": "advisory",
+      "file": "bin/relaunch.js",
+      "line": 42,
+      "title": "Signal policy double-delivers on mixed TTY setups",
+      "problem": "signalPolicy() checks only stdin. With non-TTY stdin but a controlling terminal (cmd | codemie), Ctrl+C reaches the child through group delivery and again through the SIGINT forward. With TTY stdin, SIGHUP on terminal close is delivered to the group and also forwarded.",
+      "impact": "Only the first run after an update with piped stdin (or a closing terminal): the child sees SIGINT or SIGHUP twice, which can force-quit cleanup. Narrow trigger; workaround is to Ctrl+C once more or rerun. Matches the spec's stated policy.",
+      "recommendation": "Treat the process as foreground when isatty(0), isatty(1) or isatty(2) and ignore SIGINT (and SIGHUP) in that case, forwarding only SIGTERM.",
+      "status": "wont-fix",
+      "disposition": {
+        "rationale": "recommended action accepted",
+        "source": "hitl",
+        "action": "fix-later"
+      }
+    },
+    {
+      "id": "CR-003",
+      "kind": "code",
+      "severity": "minor",
+      "triage": "advisory",
+      "file": "bin/relaunch.js",
+      "line": 64,
+      "title": "relaunch() exceeds 50-line function guideline",
+      "problem": "relaunch() spans about 72 lines (signal handler setup/teardown, spawn, spawn-error and exit relay) against code-quality.md's 'functions under 50 lines; one responsibility'.",
+      "impact": "Maintainability only; no behavior consequence. Not enforced by a lint gate, so it does not block.",
+      "recommendation": "Extract signal handler wiring/teardown and the child exit relay into small helpers so relaunch() stays under 50 lines.",
+      "status": "wont-fix",
+      "disposition": {
+        "rationale": "recommended action accepted",
+        "source": "hitl",
+        "action": "fix-later"
+      }
+    },
+    {
+      "id": "CR-004",
+      "kind": "code",
+      "severity": "minor",
+      "triage": "advisory",
+      "type": "question",
+      "file": "bin/relaunch.js",
+      "line": 77,
+      "title": "Is dropping --inspect* from execArgv intended?",
+      "problem": "The spec says the child is spawned with process.execArgv, but relaunch() filters out every --inspect* flag so the child does not fail on a taken debugger port.",
+      "impact": "Behavior is sensible, but the child runs without the debugger flags the user passed; the deviation is not recorded in the spec.",
+      "recommendation": "Confirm this deviation is intended and note it in the spec, or replay execArgv unchanged.",
+      "status": "wont-fix",
+      "disposition": {
+        "rationale": "recommended action accepted",
+        "source": "hitl",
+        "action": "accept"
+      }
+    },
+    {
+      "id": "CR-005",
+      "kind": "code",
+      "severity": "minor",
+      "triage": "advisory",
+      "file": "git history",
+      "title": "Commit subjects carry the ticket key",
+      "problem": "Commits e9417435, 860398f5, 858e49b9, dad8838b and 40e7e7c1 all end the subject with (EPMCDME-16837); git-workflow.md Anti-Patterns says to reference the ticket in the body footer instead.",
+      "impact": "Subject noise only. commitlint does not enforce it and Squash-and-Merge replaces the commit subjects with the PR title, so the trigger is limited to unsquashed history.",
+      "recommendation": "Move the ticket key to the commit body footer or PR description when squashing; no rewrite needed if the PR is squash-merged.",
+      "status": "wont-fix",
+      "disposition": {
+        "rationale": "recommended action accepted",
+        "source": "hitl",
+        "action": "fix-later"
+      }
+    }
+  ],
+  "deferred": [
+    {
+      "id": "DF-001",
+      "severity": "major",
+      "file": "src/utils/cli-updater.ts",
+      "line": 412,
+      "title": "Launcher continues while another process holds the update lock",
+      "problem": "A starter that fails to take the update lock returns false and continues startup while the lock holder may be replacing dist/, so its lazy imports can load half-replaced or mixed-version files.",
+      "preexisting": "The lock-held early return predates this change, which relaunches only after this process's own install."
+    }
+  ],
+  "coverage_graded_at": "final",
+  "business_review": [
+    {
+      "kind": "spec",
+      "item": "checkAndPromptForUpdate() returns Promise<boolean>: true only when the silent auto-update installed",
+      "status": "pass",
+      "notes": "true only after updateCli (rethrows on failure); all other paths false"
+    },
+    {
+      "kind": "spec",
+      "item": "bin/codemie.js relaunches on true before what's-new and the cli import, preserving argv, cwd, env, stdio",
+      "status": "pass",
+      "notes": "Relaunch before whatsnew/cli import; --inspect* filtered from execArgv, see CR-004"
+    },
+    {
+      "kind": "spec",
+      "item": "Child consumes the marker and skips the update gate",
+      "status": "pass",
+      "notes": "consumeRelaunchMarker runs before first dynamic import; gate has && !isRelaunched"
+    },
+    {
+      "kind": "spec",
+      "item": "Parent exits with child's code; re-raises child's signal",
+      "status": "pass",
+      "notes": "relaunch.js exit handler; covered by relaunch tests"
+    },
+    {
+      "kind": "spec",
+      "item": "Per-platform signal policy",
+      "status": "pass",
+      "notes": "signalPolicy matches the spec; double-delivery edge cases in CR-002"
+    },
+    {
+      "kind": "spec",
+      "item": "Spawn failure writes one stderr line and exits 1",
+      "status": "pass",
+      "notes": "Never falls through to the mixed-module import"
+    },
+    {
+      "kind": "spec",
+      "item": "Relaunch sits behind the existing gate; hook, scheduled, --json, test-env, Connect never relaunch",
+      "status": "pass",
+      "notes": "updated stays false unless the gate ran"
+    },
+    {
+      "kind": "spec",
+      "item": "Migrations stay ahead of the update gate",
+      "status": "pass",
+      "notes": "Migration block not moved; child re-runs the launcher"
+    },
+    {
+      "kind": "spec",
+      "item": "Marker name and entry script path are an internal cross-version contract",
+      "status": "pass",
+      "notes": "Literal pinned by tests; not documented as a user switch"
+    },
+    {
+      "kind": "spec",
+      "item": "Non-goal: concurrent-starter window left open",
+      "status": "partial",
+      "notes": "Post-lock check added, but its false return still leaves the stale-module crash; see CR-001"
+    },
+    {
+      "kind": "spec",
+      "item": "Non-goals: no new flag or docs beyond CONFIGURATION.md note and changelog; other bin entries unchanged",
+      "status": "pass",
+      "notes": "Only bin/codemie.js and new bin/relaunch.js changed"
+    },
+    {
+      "kind": "story-ac",
+      "item": "AC1: no CLI module imported by the process after a successful auto-update",
+      "status": "pass",
+      "notes": "Relaunch directly after check; contract test pins no import between"
+    },
+    {
+      "kind": "story-ac",
+      "item": "AC2: original command runs on updated CLI without retry for version/help/doctor/list/analytics",
+      "status": "pass",
+      "notes": "Bin tests cover them; changelog gives the one-time manual step"
+    },
+    {
+      "kind": "story-ac",
+      "item": "AC3: regression test for an upgrade adding an export to an already-loaded module",
+      "status": "pass",
+      "notes": "fake-npm probe payload; --version test"
+    },
+    {
+      "kind": "story-ac",
+      "item": "AC4: bin-level tests for version, doctor, list, analytics --help and update",
+      "status": "pass",
+      "notes": "doctor accepts exit 0 or 1 by design (documented in test); output and install count asserted"
+    },
+    {
+      "kind": "story-ac",
+      "item": "AC5: codemie update completes cleanly after installation",
+      "status": "pass",
+      "notes": "update exits 0 and installs once test"
+    },
+    {
+      "kind": "story-ac",
+      "item": "AC6: relaunch preserves argv, cwd, env, exit status; no update loop",
+      "status": "pass",
+      "notes": "relaunch.test.ts and interval-0 bin test"
+    },
+    {
+      "kind": "story-ac",
+      "item": "AC7: unit tests cover the return value in each branch and spawn failure",
+      "status": "pass",
+      "notes": "utils-misc-coverage and relaunch tests"
+    },
+    {
+      "kind": "story-ac",
+      "item": "AC8: single SIGINT on POSIX TTY; marker/script path contract test",
+      "status": "pass",
+      "notes": "relaunch.test.ts group-SIGINT test; recorder test pins marker and path"
+    }
+  ],
+  "standards_review": [
+    {
+      "kind": "commit-format",
+      "status": "partial",
+      "notes": "5 subjects use allowed types/scope but carry the ticket key in the subject; guide anti-pattern, not commitlint-enforced. See CR-005"
+    },
+    {
+      "kind": "code-quality",
+      "status": "partial",
+      "notes": "relaunch() in bin/relaunch.js is about 72 lines vs the 50-line guideline. Otherwise met. See CR-003"
+    },
+    {
+      "kind": "security",
+      "status": "pass",
+      "notes": "spawn uses an argument array, no shell; script from import.meta.url, args from own argv; marker carries no secret"
+    }
+  ],
+  "final_round": {
+    "decision": "request-changes",
+    "rationale": "All four lenses and the standards audit ran with no gaps. One blocking finding: the post-lock sibling-installed branch returns false and skips the relaunch, leaving the stale-module crash for a losing concurrent starter. Plus 4 advisory findings, 1 deferred (lock-held path, code-review-deferred.local.md), 13 dismissed (code-review-dismissed.local.md).",
+    "confidence": "high",
+    "risk_flags": []
+  }
+}
