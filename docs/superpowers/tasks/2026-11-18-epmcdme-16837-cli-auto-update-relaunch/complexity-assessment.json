@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "task": "After a successful startup auto-update, re-execute the original codemie command in a fresh process (preserving argv, cwd, env, stdio, exit status/signal, no update loop) with bin-level regression tests.",
+  "generated": "2026-11-18T00:00:00Z",
+  "dimensions": {
+    "component_scope":      { "score": 3, "label": "M" },
+    "requirements_clarity": { "score": 3, "label": "M" },
+    "technical_risk":       { "score": 4, "label": "L" },
+    "file_change_estimate": { "score": 3, "label": "M" },
+    "dependencies":         { "score": 1, "label": "XS" },
+    "affected_layers":      { "score": 2, "label": "S" }
+  },
+  "total": 16,
+  "size": "M",
+  "size_legend": {
+    "XS": "6-9 — < half day — plan directly",
+    "S": "10-14 — 1 day — plan directly",
+    "M": "15-20 — 2-3 days — brainstorm first",
+    "L": "21-26 — 4-5 days — brainstorm first",
+    "XL": "27-31 — > 1 sprint — recommend splitting",
+    "XXL": "32-36 — > 1 sprint — must split"
+  },
+  "routing": "brainstorming",
+  "key_reasoning": [
+    {
+      "dimension": "technical_risk",
+      "reason": "No re-launch mechanism exists in the repo. The closest precedents are exec() in src/utils/exec.ts (piped stdio, rejects on signal death) and run-skills-cli.ts spawn(process.execPath) (runs a different script). Neither gives transparent pass-through of exit code, signal, TTY or stdin. Windows .cmd shims and replacing a running install add risk. The loop guard currently relies only on the .last-update-check timestamp, which CODEMIE_UPDATE_CHECK_INTERVAL=0 defeats, so a re-entry marker is needed. The AC also enumerates variant cases (version, doctor, list, analytics, non-interactive) and no existing fake-npm test template covers them, which adds to the risk. There is no auth or secret surface, and rollback is easy."
+    }
+  ],
+  "red_flags_applied": [
+    "Technical Risk set to L: no exact precedent for transparent process relaunch, and the AC enumerates edge variants with no covering test template"
+  ],
+  "split_recommendation": null
+}

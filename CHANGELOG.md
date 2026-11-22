@@ -87,6 +87,10 @@ The same tables, with worked use cases, are in [docs/PROXY-AND-ANALYTICS.md](doc
 - Local-only commands are no longer counted as session turns
 - Claude Desktop's automatic title is no longer sent as the session title
 
+### Fixed
+
+- A startup auto-update now restarts the command once on the updated install, so `--version`, `--help`, `doctor`, `list` and `analytics` no longer crash with "does not provide an export named ...". This protects updates from this version on: if you are on an earlier 0.16.x and see that crash once, run `npm i -g @codemieai/code@latest` once
+
 ## [0.16.10] - 2026-11-17
 
 ### Added
